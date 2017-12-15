@@ -1,0 +1,237 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<title>Javascript Task Scheduling</title>
+
+		<link rel="stylesheet" href="css/reveal.css">
+		<link rel="stylesheet" href="css/theme/black.css">
+
+		<!-- Theme used for syntax highlighting of code -->
+		<link rel="stylesheet" href="lib/css/atom-one-dark.css">
+
+		<!-- Printing and PDF exports -->
+		<script>
+			var link = document.createElement( 'link' );
+			link.rel = 'stylesheet';
+			link.type = 'text/css';
+			link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+			document.getElementsByTagName( 'head' )[0].appendChild( link );
+		</script>
+	</head>
+	<body>
+		<div class="reveal">
+			<div class="slides">
+
+				<section data-background-image="./bg.jpg">
+                    <h1> Javascript task scheduling</h1>
+
+                    <p>Paris Typescript Meetup - 12/2017</p>
+
+                    <p>by @damienrajon</P>
+                    <img id='logo' class="logoimg" src="./img/dashlane.png"/>
+                </section>
+
+                <section data-background-image="./bg.jpg">
+
+
+                    <section >
+                        <h1>The Event Loop</h1>
+                        <h3 class="fragment"> What is it? </h3>
+                        <p class="fragment">
+                            A single thread that executes your code and deals with callbacks for asychronous
+                            operations (eg. accessing a file) using a queue.<br/>
+                            This allows it to be non blocking.
+                        </p>
+                    </section>
+
+                    <section>
+                        <p><a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/EventLoop"><img src="./img/default.svg"/></a></p>
+                        <i class="fragment" data-fragment-index='2'><small>dat paint skill</small></i>
+                        <p class="fragment" data-fragment-index='1'>Items from the queue will be consumed once the stack is empty</p>
+                    </section>
+
+                    <section>
+                        <h3> A little example </h3>
+                        <pre><code data-trim data-noescape>
+function foo(b) {
+  const a = 10;
+  return a + b + 11;<span class='fragment current-visible' data-fragment-index='3'>// <---</span>
+}
+
+function bar(x) {
+  const y = 3;
+  return foo(x * y);<span class='fragment current-visible' data-fragment-index='2'>// <---</span><span class='fragment current-visible' data-fragment-index='4'>// <---</span>
+}
+setTimeout(() => console.log('yup'), 0);<span class='fragment current-visible' data-fragment-index='0'>// <---</span><span class='fragment current-visible' data-fragment-index='5'>// <---</span>
+console.log(bar(7)); <span class='fragment current-visible' data-fragment-index='1'>// <---</span>
+                        </code></pre>
+
+
+                        <ol>
+                            <li class="fragment" data-fragment-index='0'>setTimeout callback registered to be called</li>
+                            <li class="fragment" data-fragment-index='1'>A call to bar is pushed onto the stack</li>
+                            <li class="fragment" data-fragment-index='2'>A call to foo is pushed onto the stack</li>
+                            <li class="fragment" data-fragment-index='3'>foo is poped (because it returned)</li>
+                            <li class="fragment" data-fragment-index='4'>bar is poped, console.log(42)</li>
+                            <li class="fragment" data-fragment-index='5'>Process the queue: console.log(yup)</li>
+                        </ol>
+                    </section>
+
+                </section>
+                
+				<section data-background-image="./bg.jpg">
+                    <section>
+                    <h1> Introducing Micro Tasks </h1>
+
+                    </section>
+
+                    <section data-background-image="./bg.jpg">
+                        <p>What should this look like ?</p>
+                        <pre><code data-trim data-noescape>
+                            console.log('script start'); <span data-fragment-index="1" class="fragment fade-in">// #1</span>
+                            <!-- <span class="fragment highlight-red" data-fragment-index="1">setTimeout</span>(function() { -->
+                            setTimeout(() => {
+                              console.log('setTimeout'); <span data-fragment-index="5" class="fragment fade-in">// #5</span>
+                            }, 0);
+
+                            Promise.resolve().then(() => {
+                              console.log('promise1');  <span data-fragment-index="3" class="fragment fade-in">// #3</span>
+                            }).then(function() {
+                              console.log('promise2'); <span data-fragment-index="4" class="fragment fade-in">// #4</span>
+                            });
+
+                            console.log('script end'); <span data-fragment-index="2" class="fragment fade-in">// #2</span>
+                        </pre></code>
+                    </section>
+
+                    <section>
+                        <h3>Ok cool, but why ?</h3>
+                        <ul>
+                            <li class="fragment">Micro tasks have a dedicated queue</li>
+                            <li class="fragment">The micro task queue must be exhausted before poping a task from the macro task queue</li>
+                            <li class="fragment">Should be used for fast paced internal callbacks</li>
+                        </ul>
+                    </section>
+
+                </section>
+
+                <section data-background-image="./bg.jpg">
+                    <section>
+                    <h1>This is boring, why should I care ?</h1>
+                    </section>
+
+                    <section>
+                        <h3>Because this</h3>
+
+                        <pre><code data-trim data-noescape>
+function foo(startTime, i, cb) {
+    if (i < 5000) {
+        setTimeout(() => foo(startTime, ++i,cb), 0);
+    } else {
+        return cb(+new Date() - startTime);
+    }
+}
+
+function bar(startTime, i, cb) {
+    if (i < 5000) {
+        Promise.resolve().then(bar(startTime, ++i, cb));
+    } else {
+        return cb(+new Date() - startTime);
+    }
+}
+
+                        </pre></code>
+                        <!-- Run it in node and in CH/FF -->
+                        <p class="fragment">Micro tasks have less overhead and are faster to be dispatched by the engine</p>
+                    </section>
+                    <section>
+                        <h3>And also this</h3>
+
+                        <pre><code data-trim data-noescape>
+
+let answer = null;
+let retry = fn => Promise.resolve().then(fn);
+function foo() {
+    if (answer) {
+        console.log(`Got it ! ${answer}`);
+    } else {
+        console.log('No answer yet');
+        retry(foo);
+    }
+}
+setTimeout(() => answer = 42, 0);
+foo();
+                        </pre></code>
+                        <!-- Run it in node and in CH/FF -->
+                        <!-- Then fix it with a setTimeout -->
+                    </section>
+                </section>
+
+
+                <section data-background-image="./bg.jpg">
+                    <h1>Takeaways</h1>
+                    <section>
+                    <h3>(Macro) Tasks</h3>
+                    <ul>
+                        <li>setTimeout, browser APIs (eg. XMLHttpRequest)</li>
+                        <li>Allows for user interaction in between</li>
+                        <li>Should not be used for performance critical flows</li>
+                    </ul>
+
+                    </section>
+
+                    <section>
+                    <h3>Micro Tasks</h3>
+                    <ul>
+                        <li>Promise callbacks, MutationObervers, process.nextTick</li>
+                        <li>Should be used for fast callback chaining and internal logic</li>
+                        <li class="highlight-red">Micro tasks queuing micro tasks will not allow task to execute</li>
+                    </ul>
+                    </section>
+                </section>
+
+                <section data-background-image="./bg.jpg">
+                    <h1>Thanks !</h1>
+                    <p>Questions ?
+                    <p>
+                    <small>
+                        Credits to <a href="https://jakearchibald.com/2015/tasks-microtasks-queues-and-schedules/">Jake Archibald</a> for 
+                        his awesome blog post about this whole thing.
+                            </br>
+                    </small>
+
+                    </p>
+                </section>
+
+                <!-- <section style="height:80px" data-background-iframe="https://jakearchibald.com/2015/tasks-microtasks-queues-and-schedules#why-is-it-different"> -->
+                <!-- </section> -->
+
+			<!-- <section data-background-color="#14697f">Slide 2</section> -->
+				<!-- <section data-background-color="#25b41e">Slide 2</section> -->
+                <!-- <section data-background-color="#ff5412"></section> -->
+			</div>
+		</div>
+
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.js"></script>
+
+		<script>
+			// More info about config & dependencies:
+			// - https://github.com/hakimel/reveal.js#configuration
+			// - https://github.com/hakimel/reveal.js#dependencies
+			Reveal.initialize({
+                history: true,
+                backgroundTransition: 'none',
+				dependencies: [
+					{ src: 'plugin/markdown/marked.js' },
+					{ src: 'plugin/markdown/markdown.js' },
+					{ src: 'plugin/notes/notes.js', async: true },
+					{ src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } }
+				]
+			});
+		</script>
+	</body>
+</html>
